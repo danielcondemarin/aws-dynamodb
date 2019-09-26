@@ -10,7 +10,7 @@ async function createTable({ dynamodb, name, attributeDefinitions, keySchema, st
       ...(stream && {
         StreamSpecification: {
           StreamEnabled: true,
-          StreamViewType: 'NEW_IMAGE'
+          StreamViewType: 'NEW_AND_OLD_IMAGES'
         }
       })
     })
