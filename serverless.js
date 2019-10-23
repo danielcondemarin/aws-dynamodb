@@ -18,6 +18,8 @@ const defaults = {
       KeyType: 'HASH'
     }
   ],
+  globalSecondaryIndexes: [],
+  name: false,
   region: 'us-east-1',
   stream: false
 }
@@ -71,10 +73,17 @@ class AwsDynamoDb extends Component {
         this.context.debug(`Config changed for table ${config.name}. Updating...`)
 
         if (!equals(prevTable.name, config.name)) {
+          // If "delete: false", don't delete the table
+          if (config.delete === false) {
+            throw new Error(
+              `You're attempting to change your table name from ${this.state.name} to ${config.name} which will result in you deleting your table, but you've specified the "delete" input to "false" which prevents your original table from being deleted.`
+            )
+          }
           await deleteTable({ dynamodb, name: prevTable.name })
           config.arn = await createTable({ dynamodb, ...config })
         } else {
-          await updateTable({ dynamodb, ...config })
+          const prevGlobalSecondaryIndexes = prevTable.globalSecondaryIndexes || []
+          await updateTable.call(this, { dynamodb, prevGlobalSecondaryIndexes, ...config })
         }
       }
     }
