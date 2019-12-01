@@ -18,24 +18,19 @@ const defaults = {
       KeyType: 'HASH'
     }
   ],
+  globalSecondaryIndexes: [],
+  name: false,
   region: 'us-east-1',
   stream: false
 }
 
-const setTableName = (component, inputs, config) => {
+const setTableName = (component, inputs) => {
+  const { name, lastDeployHadNameDefined = true } = component.state
   const generatedName = inputs.name || component.context.resourceId()
 
-  const hasDeployedBefore = 'nameInput' in component.state
-  const givenNameHasNotChanged =
-    component.state.nameInput && component.state.nameInput === inputs.name
-  const bothLastAndCurrentDeployHaveNoNameDefined = !component.state.nameInput && !inputs.name
-
-  config.name =
-    hasDeployedBefore && (givenNameHasNotChanged || bothLastAndCurrentDeployHaveNoNameDefined)
-      ? component.state.name
-      : generatedName
-
-  component.state.nameInput = inputs.name || false
+  // Name considered not changed if previous deploy did not define a name
+  // and neither did this deploy
+  return !lastDeployHadNameDefined && !inputs.name ? name : generatedName
 }
 
 class AwsDynamoDb extends Component {
@@ -56,7 +51,7 @@ class AwsDynamoDb extends Component {
       `Checking if table ${config.name} already exists in the ${config.region} region.`
     )
 
-    setTableName(this, inputs, config)
+    config.name = setTableName(this, inputs)
 
     const prevTable = await describeTable({ dynamodb, name: this.state.name })
 
@@ -78,10 +73,17 @@ class AwsDynamoDb extends Component {
         this.context.debug(`Config changed for table ${config.name}. Updating...`)
 
         if (!equals(prevTable.name, config.name)) {
+          // If "delete: false", don't delete the table
+          if (config.delete === false) {
+            throw new Error(
+              `You're attempting to change your table name from ${this.state.name} to ${config.name} which will result in you deleting your table, but you've specified the "delete" input to "false" which prevents your original table from being deleted.`
+            )
+          }
           await deleteTable({ dynamodb, name: prevTable.name })
           config.arn = await createTable({ dynamodb, ...config })
         } else {
-          await updateTable({ dynamodb, ...config })
+          const prevGlobalSecondaryIndexes = prevTable.globalSecondaryIndexes || []
+          await updateTable.call(this, { dynamodb, prevGlobalSecondaryIndexes, ...config })
         }
       }
     }
@@ -94,6 +96,7 @@ class AwsDynamoDb extends Component {
     this.state.name = config.name
     this.state.stream = config.stream
     this.state.region = config.region
+    this.state.lastDeployHadNameDefined = Boolean(inputs.name)
     await this.save()
 
     const outputs = pick(outputsList, config)
