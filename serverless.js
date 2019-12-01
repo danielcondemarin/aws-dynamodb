@@ -22,20 +22,13 @@ const defaults = {
   stream: false
 }
 
-const setTableName = (component, inputs, config) => {
+const setTableName = (component, inputs) => {
+  const { name, lastDeployHadNameDefined = true } = component.state
   const generatedName = inputs.name || component.context.resourceId()
 
-  const hasDeployedBefore = 'nameInput' in component.state
-  const givenNameHasNotChanged =
-    component.state.nameInput && component.state.nameInput === inputs.name
-  const bothLastAndCurrentDeployHaveNoNameDefined = !component.state.nameInput && !inputs.name
-
-  config.name =
-    hasDeployedBefore && (givenNameHasNotChanged || bothLastAndCurrentDeployHaveNoNameDefined)
-      ? component.state.name
-      : generatedName
-
-  component.state.nameInput = inputs.name || false
+  // Name considered not changed if previous deploy did not define a name
+  // and neither did this deploy
+  return !lastDeployHadNameDefined && !inputs.name ? name : generatedName
 }
 
 class AwsDynamoDb extends Component {
@@ -56,7 +49,7 @@ class AwsDynamoDb extends Component {
       `Checking if table ${config.name} already exists in the ${config.region} region.`
     )
 
-    setTableName(this, inputs, config)
+    config.name = setTableName(this, inputs)
 
     const prevTable = await describeTable({ dynamodb, name: this.state.name })
 
@@ -94,6 +87,7 @@ class AwsDynamoDb extends Component {
     this.state.name = config.name
     this.state.stream = config.stream
     this.state.region = config.region
+    this.state.lastDeployHadNameDefined = Boolean(inputs.name)
     await this.save()
 
     const outputs = pick(outputsList, config)
